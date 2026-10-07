@@ -52,7 +52,7 @@ Generated sources land in `build/generated/sources/iso-codes`. The generator liv
 
 ## Releasing
 
-`.github/workflows/release.yml` runs weekly. It lists upstream tags, compares them with what's already on Maven
+`.github/workflows/release.yml` (manual for now; a weekly schedule is commented out in the file) lists upstream tags, compares them with what's already on Maven
 Central (`scripts/unpublished_versions.py`), and publishes each missing release, oldest first. Run it manually
 from the Actions tab (with dry-run unticked) to publish immediately.
 
