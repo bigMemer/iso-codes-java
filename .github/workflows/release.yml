@@ -1,13 +1,13 @@
 name: Release
 
+# Publishes the iso-codes version in iso-codes.version to Maven Central, unless it's already there.
+# Manual only for now; Maven Central credentials aren't configured yet.
+
 on:
-  # Weekly schedule disabled until Maven Central credentials are configured. To re-enable:
-  # schedule:
-  #   - cron: "17 6 * * 1" # Mondays, 06:17 UTC
   workflow_dispatch:
     inputs:
       dry-run:
-        description: "Only list unpublished releases, don't publish"
+        description: "Only report what would be published, don't publish"
         type: boolean
         default: true
 
@@ -16,33 +16,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      versions: ${{ steps.find.outputs.versions }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: find
-        run: echo "versions=$(python3 scripts/unpublished_versions.py)" >> "$GITHUB_OUTPUT"
-
   publish:
-    needs: plan
-    if: needs.plan.outputs.versions != '[]' && !(github.event_name == 'workflow_dispatch' && inputs.dry-run)
     runs-on: ubuntu-latest
-    strategy:
-      # Publish one release at a time, oldest first, so a failure leaves a clean gap to retry.
-      max-parallel: 1
-      fail-fast: true
-      matrix:
-        iso-codes: ${{ fromJSON(needs.plan.outputs.versions) }}
     steps:
       - uses: actions/checkout@v7
+      - id: check
+        run: |
+          version=$(tr -d '[:space:]' < iso-codes.version)
+          group=$(sed -n 's/^group=//p' gradle.properties)
+          metadata="https://repo1.maven.org/maven2/${group//.//}/iso-codes/maven-metadata.xml"
+          if curl -sf "$metadata" | grep -q "<version>$version</version>"; then
+            echo "$group:iso-codes:$version is already on Maven Central."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$group:iso-codes:$version is not on Maven Central yet."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@v6
+        if: steps.check.outputs.publish == 'true'
         with:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
-      - run: ./gradlew build javadoc publishAndReleaseToMavenCentral -PisoCodesVersion=${{ matrix.iso-codes }} --no-configuration-cache
+        if: steps.check.outputs.publish == 'true'
+      - if: steps.check.outputs.publish == 'true' && !inputs.dry-run
+        run: ./gradlew build javadoc publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
